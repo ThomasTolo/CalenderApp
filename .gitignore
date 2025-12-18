@@ -1,0 +1,32 @@
+# OS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# Gradle (root + subprojects)
+.gradle/
+**/.gradle/
+build/
+**/build/
+
+# Node (root + subprojects)
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+dist-ssr/
+**/dist-ssr/
+
+# Logs
+*.log
+logs/
+
+# Env/local overrides
+*.local
+.env
+.env.*
+
+# Java
+bin/
+out/
