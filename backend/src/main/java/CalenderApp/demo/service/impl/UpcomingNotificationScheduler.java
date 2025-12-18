@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.service.impl;
+package CalenderApp.demo.service.impl;
 
 import CalenderApp.demo.model.CalendarItem;
 import CalenderApp.demo.model.Notification;
@@ -22,7 +22,6 @@ public class UpcomingNotificationScheduler {
         this.notificationService = notificationService;
     }
 
-    // Every minute
     @Scheduled(fixedDelayString = "${app.notifications.upcoming.pollMs:60000}")
     public void notifyUpcoming() {
         LocalDate today = LocalDate.now();

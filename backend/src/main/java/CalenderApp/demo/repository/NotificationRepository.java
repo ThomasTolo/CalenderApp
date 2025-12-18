@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.repository;
+package CalenderApp.demo.repository;
 
 import CalenderApp.demo.model.AppUser;
 import CalenderApp.demo.model.Notification;

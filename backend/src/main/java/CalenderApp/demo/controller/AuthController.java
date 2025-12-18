@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.controller;
+package CalenderApp.demo.controller;
 
 import CalenderApp.demo.controller.dto.AuthLoginRequest;
 import CalenderApp.demo.controller.dto.AuthRegisterRequest;

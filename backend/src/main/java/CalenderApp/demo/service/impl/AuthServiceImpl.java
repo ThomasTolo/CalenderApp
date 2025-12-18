@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.service.impl;
+package CalenderApp.demo.service.impl;
 
 import CalenderApp.demo.config.security.JwtService;
 import CalenderApp.demo.model.AppUser;
@@ -8,6 +8,7 @@ import CalenderApp.demo.service.exception.BadRequestException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -47,9 +48,14 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public String login(String username, String password) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(username, password)
-        );
+        Authentication authentication;
+        try {
+            authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(username, password)
+            );
+        } catch (AuthenticationException ex) {
+            throw new BadRequestException("Invalid username/password");
+        }
 
         if (!authentication.isAuthenticated()) {
             throw new BadRequestException("Invalid username/password");

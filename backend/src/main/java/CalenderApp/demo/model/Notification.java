@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.model;
+package CalenderApp.demo.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.service.impl;
+package CalenderApp.demo.service.impl;
 
 import CalenderApp.demo.config.RawWebSocketServer;
 import CalenderApp.demo.model.CalendarItem;
@@ -11,6 +11,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -64,9 +65,11 @@ public class KafkaEventPublisher implements EventPublisher {
 
     private void publish(String topic, String key, Object payload) {
         try {
-            kafkaTemplate.send(topic, key, mapper.writeValueAsString(payload));
+            String safeTopic = Objects.requireNonNull(topic, "topic");
+            String safeKey = Objects.requireNonNull(key, "key");
+            String json = Objects.requireNonNull(mapper.writeValueAsString(payload));
+            kafkaTemplate.send(safeTopic, safeKey, json);
         } catch (Exception ignored) {
-            // Local dev may not have Kafka running; don't crash core CRUD.
         }
     }
 

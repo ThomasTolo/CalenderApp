@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.model;
+package CalenderApp.demo.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -23,7 +23,6 @@ public class AppUser {
     @Column(nullable = false, length = 255)
     private String passwordHash;
 
-    // Comma-separated roles, e.g. "USER" or "USER,ADMIN"
     @Column(nullable = false, length = 128)
     private String roles = "USER";
 

@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.service.impl;
+package CalenderApp.demo.service.impl;
 
 import CalenderApp.demo.model.AppUser;
 import CalenderApp.demo.model.CalendarItem;

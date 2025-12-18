@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.service.impl;
+package CalenderApp.demo.service.impl;
 
 import CalenderApp.demo.model.AppUser;
 import CalenderApp.demo.model.Notification;
@@ -10,6 +10,7 @@ import CalenderApp.demo.service.view.NotificationView;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class NotificationServiceImpl implements NotificationService {
@@ -49,7 +50,8 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public NotificationView create(Notification notification) {
-        Notification saved = notificationRepository.save(notification);
+        Objects.requireNonNull(notification, "notification");
+        Notification saved = Objects.requireNonNull(notificationRepository.save(notification));
         eventPublisher.notificationCreated(saved);
         return toView(saved);
     }

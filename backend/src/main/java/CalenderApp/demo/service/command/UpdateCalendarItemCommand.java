@@ -1,5 +1,4 @@
 package CalenderApp.demo.service.command;
-
 import CalenderApp.demo.model.CalendarItemType;
 import CalenderApp.demo.model.ImportanceLevel;
 

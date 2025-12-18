@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.config.security;
+package CalenderApp.demo.config.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;

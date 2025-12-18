@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.config.security;
+package CalenderApp.demo.config.security;
 
 import CalenderApp.demo.model.AppUser;
 import CalenderApp.demo.repository.AppUserRepository;

@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.controller.dto;
+package CalenderApp.demo.controller.dto;
 
 import jakarta.validation.constraints.NotBlank;
 

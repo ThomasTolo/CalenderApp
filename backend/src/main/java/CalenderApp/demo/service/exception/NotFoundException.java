@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.service.exception;
+package CalenderApp.demo.service.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;

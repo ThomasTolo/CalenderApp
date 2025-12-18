@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.model;
+package CalenderApp.demo.model;
 
 public enum ImportanceLevel {
     LOW,

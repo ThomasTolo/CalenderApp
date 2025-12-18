@@ -1,4 +1,4 @@
-package main.java.CalenderApp.demo.config.redis;
+package CalenderApp.demo.config.redis;
 
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
