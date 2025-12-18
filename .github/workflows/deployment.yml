@@ -1,0 +1,39 @@
+name: Deployment of CalenderApp
+run-name: ${{ github.actor }} pushed or opened a PR.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Start services
+        run: docker compose up -d --build
+
+      - name: Wait for services
+        run: |
+          echo "Waiting for containers to stabilize..."
+          sleep 30
+
+          echo "Current container statuses:"
+          docker compose ps
+
+      - name: Run health check
+        run: |
+          echo "Checking backend health..."
+          curl -f http://localhost:8080/api/ping
+
+          echo "Checking frontend health..."
+          curl -f http://localhost:5173/
+
+      - name: Stop services
+        if: always()
+        run: docker compose down
