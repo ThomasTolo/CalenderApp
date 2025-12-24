@@ -5,6 +5,7 @@ import CalenderApp.demo.controller.dto.CalendarItemResponse;
 import CalenderApp.demo.controller.dto.CalendarItemUpdateRequest;
 import CalenderApp.demo.controller.dto.CalendarMonthResponse;
 import CalenderApp.demo.model.AppUser;
+import CalenderApp.demo.model.CalendarItemType;
 import CalenderApp.demo.service.CalendarService;
 import CalenderApp.demo.service.CurrentUserService;
 import CalenderApp.demo.service.command.CreateCalendarItemCommand;
@@ -31,16 +32,16 @@ public class CalendarController {
     }
 
     @GetMapping("/day")
-    public List<CalendarItemResponse> getDay(@RequestParam LocalDate date, Principal principal) {
+    public List<CalendarItemResponse> getDay(@RequestParam LocalDate date, @RequestParam(required = false) CalendarItemType type, Principal principal) {
         AppUser user = currentUserService.requireByUsername(principal.getName());
-        return calendarService.listDay(user, date).stream().map(CalendarController::toResponse).toList();
+        return calendarService.listDay(user, date, type).stream().map(CalendarController::toResponse).toList();
     }
 
     @GetMapping("/month")
-    public CalendarMonthResponse getMonth(@RequestParam int year, @RequestParam int month, Principal principal) {
+    public CalendarMonthResponse getMonth(@RequestParam int year, @RequestParam int month, @RequestParam(required = false) CalendarItemType type, Principal principal) {
         AppUser user = currentUserService.requireByUsername(principal.getName());
         YearMonth ym = YearMonth.of(year, month);
-        List<CalendarItemResponse> items = calendarService.listMonth(user, ym).stream().map(CalendarController::toResponse).toList();
+        List<CalendarItemResponse> items = calendarService.listMonth(user, ym, type).stream().map(CalendarController::toResponse).toList();
         return new CalendarMonthResponse(year, month, items);
     }
 
@@ -54,7 +55,11 @@ public class CalendarController {
                 request.type(),
                 request.importance(),
                 request.title(),
-                request.log()
+            request.log(),
+            request.done(),
+            request.amount(),
+            request.schoolKind(),
+            request.fixedCostFrequency()
         ));
         return toResponse(created);
     }
@@ -69,7 +74,11 @@ public class CalendarController {
                 request.type(),
                 request.importance(),
                 request.title(),
-                request.log()
+            request.log(),
+            request.done(),
+            request.amount(),
+            request.schoolKind(),
+            request.fixedCostFrequency()
         ));
         return toResponse(updated);
     }
@@ -90,6 +99,10 @@ public class CalendarController {
                 view.importance(),
                 view.title(),
                 view.log(),
+                view.done(),
+                view.amount(),
+                view.schoolKind(),
+                view.fixedCostFrequency(),
                 view.createdAt(),
                 view.updatedAt()
         );

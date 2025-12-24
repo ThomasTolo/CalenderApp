@@ -6,3 +6,9 @@ Multiple calander pages, one main with all, and access to other parts:
 - school plan(add courses for semester (how long does semester last) (add weekly plan (f.ex lecture 12-14 each wedsnday, able to marke as cancelled if there is no lecture.) Also a own adding page compulsory assignments and exams)) (For lectures, notification 2 hours before, and for compolsury notification 24 hours before) (compolsury can be marked by importance (low, medium, high, critical))
 - Work/Job plan, (times and dates for when I have work (with notification 24 hours ahead))
 - Other plans (for optional other things, like doctor appointments etc, a very flexible section for different types of dates)
+- Use Calender app on IPhone as example, view of calander
+- Add "helligdager from Norway"
+- Find what competitors are missing
+- Add birthdats (added to each year)
+- Add confirmed (a check next to the calander happening if marked as done)
+- Fix the workout plan

@@ -16,6 +16,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.math.BigDecimal;
 
 @Entity
 @Table(
@@ -55,6 +56,20 @@ public class CalendarItem {
 
     @Column(length = 2000)
     private String log;
+
+    @Column(nullable = false)
+    private boolean done = false;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal amount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private SchoolItemKind schoolKind;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "fixed_cost_subscription_id")
+    private FixedCostSubscription fixedCostSubscription;
 
     @Column(nullable = false)
     private boolean notified = false;
@@ -143,6 +158,42 @@ public class CalendarItem {
 
     public void setLog(String log) {
         this.log = log;
+        touch();
+    }
+
+    public boolean isDone() {
+        return done;
+    }
+
+    public void setDone(boolean done) {
+        this.done = done;
+        touch();
+    }
+
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
+        touch();
+    }
+
+    public SchoolItemKind getSchoolKind() {
+        return schoolKind;
+    }
+
+    public void setSchoolKind(SchoolItemKind schoolKind) {
+        this.schoolKind = schoolKind;
+        touch();
+    }
+
+    public FixedCostSubscription getFixedCostSubscription() {
+        return fixedCostSubscription;
+    }
+
+    public void setFixedCostSubscription(FixedCostSubscription fixedCostSubscription) {
+        this.fixedCostSubscription = fixedCostSubscription;
         touch();
     }
 

@@ -1,8 +1,11 @@
 package CalenderApp.demo.service.command;
 
 import CalenderApp.demo.model.CalendarItemType;
+import CalenderApp.demo.model.FixedCostFrequency;
 import CalenderApp.demo.model.ImportanceLevel;
+import CalenderApp.demo.model.SchoolItemKind;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
@@ -13,6 +16,10 @@ public record CreateCalendarItemCommand(
         CalendarItemType type,
         ImportanceLevel importance,
         String title,
-        String log
+        String log,
+        Boolean done,
+        BigDecimal amount,
+        SchoolItemKind schoolKind,
+        FixedCostFrequency fixedCostFrequency
 ) {
 }

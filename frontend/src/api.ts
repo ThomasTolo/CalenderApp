@@ -2,9 +2,15 @@ import type {
   AuthResponse,
   CalendarItemCreateRequest,
   CalendarItemResponse,
+  CalendarItemType,
   CalendarItemUpdateRequest,
   CalendarMonthResponse,
+  ExerciseResponse,
   NotificationResponse,
+  WorkoutSessionResponse,
+  WorkoutSessionUpdateRequest,
+  WorkoutTemplateCreateRequest,
+  WorkoutTemplateResponse,
 } from './types'
 
 const TOKEN_KEY = 'calenderapp.jwt'
@@ -91,16 +97,18 @@ export const api = {
     })
   },
 
-  async getMonth(year: number, month: number): Promise<CalendarMonthResponse> {
+  async getMonth(year: number, month: number, type?: CalendarItemType): Promise<CalendarMonthResponse> {
     const qs = new URLSearchParams({ year: String(year), month: String(month) })
+    if (type) qs.set('type', type)
     return request<CalendarMonthResponse>(`/api/calendar/month?${qs.toString()}`, {
       method: 'GET',
       auth: true,
     })
   },
 
-  async getDay(date: string): Promise<CalendarItemResponse[]> {
+  async getDay(date: string, type?: CalendarItemType): Promise<CalendarItemResponse[]> {
     const qs = new URLSearchParams({ date })
+    if (type) qs.set('type', type)
     return request<CalendarItemResponse[]>(`/api/calendar/day?${qs.toString()}`, {
       method: 'GET',
       auth: true,
@@ -148,6 +156,73 @@ export const api = {
     return request<NotificationResponse>(`/api/notifications/${id}/read`, {
       method: 'POST',
       auth: true,
+    })
+  },
+
+  async listWorkoutExercises(): Promise<ExerciseResponse[]> {
+    return request<ExerciseResponse[]>('/api/workout/exercises', {
+      method: 'GET',
+      auth: true,
+    })
+  },
+
+  async createWorkoutExercise(name: string): Promise<ExerciseResponse> {
+    return request<ExerciseResponse>('/api/workout/exercises', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ name }),
+    })
+  },
+
+  async deleteWorkoutExercise(id: number): Promise<void> {
+    return request<void>(`/api/workout/exercises/${id}`, {
+      method: 'DELETE',
+      auth: true,
+    })
+  },
+
+  async listWorkoutTemplates(): Promise<WorkoutTemplateResponse[]> {
+    return request<WorkoutTemplateResponse[]>('/api/workout/templates', {
+      method: 'GET',
+      auth: true,
+    })
+  },
+
+  async createWorkoutTemplate(payload: WorkoutTemplateCreateRequest): Promise<WorkoutTemplateResponse> {
+    return request<WorkoutTemplateResponse>('/api/workout/templates', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(payload),
+    })
+  },
+
+  async updateWorkoutTemplate(id: number, payload: WorkoutTemplateCreateRequest): Promise<WorkoutTemplateResponse> {
+    return request<WorkoutTemplateResponse>(`/api/workout/templates/${id}`, {
+      method: 'PUT',
+      auth: true,
+      body: JSON.stringify(payload),
+    })
+  },
+
+  async deleteWorkoutTemplate(id: number): Promise<void> {
+    return request<void>(`/api/workout/templates/${id}`, {
+      method: 'DELETE',
+      auth: true,
+    })
+  },
+
+  async getWorkoutSession(calendarItemId: number): Promise<WorkoutSessionResponse> {
+    return request<WorkoutSessionResponse>(`/api/workout/sessions/${calendarItemId}`, {
+      method: 'GET',
+      auth: true,
+    })
+  },
+
+  async updateWorkoutSession(calendarItemId: number, payload: WorkoutSessionUpdateRequest): Promise<WorkoutSessionResponse> {
+    return request<WorkoutSessionResponse>(`/api/workout/sessions/${calendarItemId}`, {
+      method: 'PUT',
+      auth: true,
+      body: JSON.stringify(payload),
     })
   },
 }

@@ -4,5 +4,7 @@ public enum CalendarItemType {
     SCHOOL,
     WORKOUT,
     MAIN_MEAL,
-    JOB
+    JOB,
+    FIXED_COST,
+    OTHER
 }

@@ -5,8 +5,13 @@ import type {
   CalendarItemResponse,
   CalendarItemType,
   CalendarMonthResponse,
+  ExerciseResponse,
+  FixedCostFrequency,
   ImportanceLevel,
   NotificationResponse,
+  SchoolItemKind,
+  WorkoutEntryRequest,
+  WorkoutTemplateResponse,
 } from './types'
 import {
   addMonths,
@@ -22,8 +27,18 @@ import { useRawWebSocket } from './hooks/useRawWebSocket'
 
 type Toast = { kind: 'error' | 'info'; message: string }
 
-const ITEM_TYPES: CalendarItemType[] = ['SCHOOL', 'WORKOUT', 'MAIN_MEAL', 'JOB']
+const ITEM_TYPES: CalendarItemType[] = ['SCHOOL', 'WORKOUT', 'MAIN_MEAL', 'JOB', 'FIXED_COST', 'OTHER']
 const IMPORTANCE: ImportanceLevel[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
+
+const PAGES: Array<{ label: string; type: CalendarItemType | null }> = [
+  { label: 'Main', type: null },
+  { label: 'Fixed Costs', type: 'FIXED_COST' },
+  { label: 'Food', type: 'MAIN_MEAL' },
+  { label: 'Workout', type: 'WORKOUT' },
+  { label: 'School', type: 'SCHOOL' },
+  { label: 'Work/Job', type: 'JOB' },
+  { label: 'Other', type: 'OTHER' },
+]
 
 function classNames(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(' ')
@@ -40,17 +55,12 @@ function fromTimeInput(v: string): string | undefined {
   return t ? t : undefined
 }
 
-function importanceDot(level: ImportanceLevel): string {
-  switch (level) {
-    case 'LOW':
-      return 'dot dot-low'
-    case 'MEDIUM':
-      return 'dot dot-med'
-    case 'HIGH':
-      return 'dot dot-high'
-    case 'CRITICAL':
-      return 'dot dot-crit'
-  }
+function typeDot(type: CalendarItemType): string {
+  return `dot dot-type-${type.toLowerCase()}`
+}
+
+function typeLine(type: CalendarItemType): string {
+  return `mini-line mini-line-type-${type.toLowerCase()}`
 }
 
 function compareItems(a: CalendarItemResponse, b: CalendarItemResponse): number {
@@ -72,6 +82,13 @@ function removeItem(list: CalendarItemResponse[], id: number): CalendarItemRespo
   const next = list.filter((x) => x.id !== id)
   next.sort(compareItems)
   return next
+}
+
+function toNumberOrUndefined(v: string): number | undefined {
+  const t = v.trim()
+  if (!t) return undefined
+  const n = Number(t)
+  return Number.isFinite(n) ? n : undefined
 }
 
 export function GlassApp() {
@@ -230,12 +247,18 @@ function CalendarHome({
   onToast: (t: Toast) => void
   onTokenInvalid: () => void
 }) {
+  const [viewMode, setViewMode] = useState<'compact' | 'tablet' | 'detailed' | 'list' | 'week'>('detailed')
+  const [typeFilter, setTypeFilter] = useState<CalendarItemType | null>(null)
   const [cursorMonth, setCursorMonth] = useState(() => startOfMonth(new Date()))
   const [selectedDate, setSelectedDate] = useState(() => toIsoDate(new Date()))
   const [monthData, setMonthData] = useState<CalendarMonthResponse | null>(null)
+  const [weekMonths, setWeekMonths] = useState<Record<string, CalendarMonthResponse>>({})
   const [dayItems, setDayItems] = useState<CalendarItemResponse[] | null>(null)
   const [notifications, setNotifications] = useState<NotificationResponse[]>([])
   const [bellOpen, setBellOpen] = useState(false)
+
+  const [workoutExercises, setWorkoutExercises] = useState<ExerciseResponse[]>([])
+  const [workoutTemplates, setWorkoutTemplates] = useState<WorkoutTemplateResponse[]>([])
 
   const pendingRefreshRef = useRef(false)
 
@@ -243,7 +266,7 @@ function CalendarHome({
     const y = cursorMonth.getFullYear()
     const m = cursorMonth.getMonth() + 1
     try {
-      const res = await api.getMonth(y, m)
+      const res = await api.getMonth(y, m, typeFilter ?? undefined)
       setMonthData(res)
     } catch (e) {
       if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
@@ -253,7 +276,7 @@ function CalendarHome({
 
   const refreshDay = async (iso: string) => {
     try {
-      const res = await api.getDay(iso)
+      const res = await api.getDay(iso, typeFilter ?? undefined)
       setDayItems(res)
     } catch (e) {
       if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
@@ -271,15 +294,30 @@ function CalendarHome({
     }
   }
 
+  const refreshWorkoutLibrary = async () => {
+    try {
+      const [ex, templates] = await Promise.all([api.listWorkoutExercises(), api.listWorkoutTemplates()])
+      setWorkoutExercises(ex)
+      setWorkoutTemplates(templates)
+    } catch (e) {
+      if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
+      // keep quiet unless user is actively using workout features
+    }
+  }
+
   useEffect(() => {
     void refreshMonth()
-    void refreshDay(selectedDate)
     void refreshNotifications()
-  }, [cursorMonth.getFullYear(), cursorMonth.getMonth()])
+    if (typeFilter === 'WORKOUT') void refreshWorkoutLibrary()
+  }, [cursorMonth.getFullYear(), cursorMonth.getMonth(), typeFilter])
 
   useEffect(() => {
     void refreshDay(selectedDate)
-  }, [selectedDate])
+  }, [selectedDate, typeFilter])
+
+  useEffect(() => {
+    setWeekMonths({})
+  }, [typeFilter])
 
   useEffect(() => {
     const t = window.setInterval(() => {
@@ -367,39 +405,126 @@ function CalendarHome({
     day: 'numeric',
   })
 
-  const createOrUpdate = async (payload: CalendarItemCreateRequest, editingId: number | null) => {
+  const weekGrid = useMemo(() => {
+    const d = fromIsoDate(selectedDate)
+    const idx = weekdayIndexMondayFirst(d) // 0..6
+    const start = new Date(d)
+    start.setDate(d.getDate() - idx)
+    const days: Array<{ iso: string; label: string }> = []
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(start)
+      day.setDate(start.getDate() + i)
+      const iso = toIsoDate(day)
+      const label = day.toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit' })
+      days.push({ iso, label })
+    }
+    return days
+  }, [selectedDate])
+
+  useEffect(() => {
+    if (viewMode !== 'week') return
+    setCursorMonth((prev) => {
+      const d = fromIsoDate(selectedDate)
+      if (prev.getFullYear() === d.getFullYear() && prev.getMonth() === d.getMonth()) return prev
+      return startOfMonth(d)
+    })
+  }, [viewMode, selectedDate])
+
+  useEffect(() => {
+    if (viewMode !== 'week') return
+
+    const requiredKeys = Array.from(new Set(weekGrid.map((d) => d.iso.slice(0, 7))))
+    const missing = requiredKeys.filter((k) => !(k in weekMonths))
+    if (missing.length === 0) return
+
+    void (async () => {
+      try {
+        const results = await Promise.all(
+          missing.map(async (k) => {
+            const y = Number(k.slice(0, 4))
+            const m = Number(k.slice(5, 7))
+            const res = await api.getMonth(y, m, typeFilter ?? undefined)
+            return [k, res] as const
+          }),
+        )
+        setWeekMonths((prev) => {
+          const next = { ...prev }
+          for (const [k, res] of results) next[k] = res
+          return next
+        })
+      } catch (e) {
+        if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
+        // keep week UI usable even if adjacent-month fetch fails
+      }
+    })()
+  }, [viewMode, weekGrid, weekMonths, typeFilter, onTokenInvalid])
+
+  const weekItemsByDate = useMemo(() => {
+    const map = new Map<string, CalendarItemResponse[]>()
+    for (const month of Object.values(weekMonths)) {
+      for (const it of month.items ?? []) {
+        const arr = map.get(it.date) ?? []
+        arr.push(it)
+        map.set(it.date, arr)
+      }
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))
+    }
+    return map
+  }, [weekMonths])
+
+  const matchesFilter = (it: CalendarItemResponse) => (typeFilter ? it.type === typeFilter : true)
+
+  const applyUpdatedItem = (it: CalendarItemResponse) => {
+    if (it.date === selectedDate) {
+      setDayItems((prev) => {
+        const list = prev ?? []
+        return matchesFilter(it) ? upsertItem(list, it) : removeItem(list, it.id)
+      })
+    }
+
+    setMonthData((prev) => {
+      if (!prev) return prev
+      const monthPrefix = `${prev.year}-${pad2(prev.month)}`
+      if (!it.date.startsWith(monthPrefix)) return prev
+      const nextItems = matchesFilter(it) ? upsertItem(prev.items ?? [], it) : removeItem(prev.items ?? [], it.id)
+      return { ...prev, items: nextItems }
+    })
+
+    setWeekMonths((prev) => {
+      const key = it.date.slice(0, 7)
+      const month = prev[key]
+      if (!month) return prev
+      const nextItems = matchesFilter(it) ? upsertItem(month.items ?? [], it) : removeItem(month.items ?? [], it.id)
+      return { ...prev, [key]: { ...month, items: nextItems } }
+    })
+  }
+
+  const createOrUpdate = async (payload: CalendarItemCreateRequest, editingId: number | null): Promise<CalendarItemResponse | null> => {
     try {
       if (editingId) {
         const updated = await api.updateItem(editingId, payload)
-        if (updated.date === selectedDate) {
-          setDayItems((prev) => upsertItem(prev ?? [], updated))
-        }
-        setMonthData((prev) => {
-          if (!prev) return prev
-          const monthPrefix = `${prev.year}-${pad2(prev.month)}`
-          if (!updated.date.startsWith(monthPrefix)) return prev
-          return { ...prev, items: upsertItem(prev.items ?? [], updated) }
-        })
+        applyUpdatedItem(updated)
+        return updated
       } else {
         const created = await api.createItem(payload)
-        if (created.date === selectedDate) {
-          setDayItems((prev) => upsertItem(prev ?? [], created))
-        }
-        setMonthData((prev) => {
-          if (!prev) return prev
-          const monthPrefix = `${prev.year}-${pad2(prev.month)}`
-          if (!created.date.startsWith(monthPrefix)) return prev
-          return { ...prev, items: upsertItem(prev.items ?? [], created) }
-        })
+        applyUpdatedItem(created)
+        return created
       }
 
       // Keep backend as source of truth, but don't block the UX on roundtrips.
       void refreshMonth()
       void refreshDay(selectedDate)
     } catch (e) {
-      if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
+      if (isApiError(e) && (e.status === 401 || e.status === 403)) {
+        onTokenInvalid()
+        return null
+      }
       onToast({ kind: 'error', message: isApiError(e) ? e.message : 'Save failed.' })
     }
+
+    return null
   }
 
   const deleteItem = async (id: number) => {
@@ -411,6 +536,14 @@ function CalendarHome({
         return { ...prev, items: removeItem(prev.items ?? [], id) }
       })
 
+      setWeekMonths((prev) => {
+        const next: Record<string, CalendarMonthResponse> = { ...prev }
+        for (const k of Object.keys(next)) {
+          next[k] = { ...next[k], items: removeItem(next[k].items ?? [], id) }
+        }
+        return next
+      })
+
       void refreshMonth()
       void refreshDay(selectedDate)
     } catch (e) {
@@ -419,10 +552,52 @@ function CalendarHome({
     }
   }
 
+  const toggleDone = async (it: CalendarItemResponse, done: boolean) => {
+    try {
+      const payload: CalendarItemCreateRequest = {
+        date: it.date,
+        startTime: fromTimeInput(toTimeInput(it.startTime)),
+        endTime: fromTimeInput(toTimeInput(it.endTime)),
+        type: it.type,
+        importance: it.importance,
+        title: it.title,
+        log: it.log ?? undefined,
+        done,
+        amount: it.amount ?? undefined,
+        schoolKind: it.schoolKind ?? undefined,
+        fixedCostFrequency: it.fixedCostFrequency ?? undefined,
+      }
+      const updated = await api.updateItem(it.id, payload)
+      applyUpdatedItem(updated)
+      void refreshMonth()
+      void refreshDay(selectedDate)
+    } catch (e) {
+      if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
+      onToast({ kind: 'error', message: isApiError(e) ? e.message : 'Update failed.' })
+    }
+  }
+
   const unreadCount = notifications.filter((n) => !n.read).length
 
+  const modeDots = viewMode === 'compact' ? 4 : viewMode === 'tablet' ? 3 : 4
+  const modeLines = viewMode === 'compact' ? 0 : viewMode === 'tablet' ? 1 : 2
+
   return (
-    <div className="layout">
+    <div>
+      <div className="page-tabs">
+        {PAGES.map((p) => (
+          <button
+            key={p.label}
+            className={classNames('tab', p.type === typeFilter && 'tab-active')}
+            onClick={() => setTypeFilter(p.type)}
+            type="button"
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="layout">
       <section className="glass panel calendar-panel">
         <div className="panel-head">
           <div className="month-nav">
@@ -436,6 +611,48 @@ function CalendarHome({
           </div>
 
           <div className="panel-actions">
+            <label className="mode-select">
+              <span>View</span>
+              <select value={viewMode} onChange={(e) => setViewMode(e.target.value as typeof viewMode)}>
+                <option value="compact">Compact</option>
+                <option value="tablet">Tablet</option>
+                <option value="detailed">Detailed</option>
+                <option value="list">List</option>
+                <option value="week">Week</option>
+              </select>
+            </label>
+
+            {viewMode === 'week' ? (
+              <div className="week-nav">
+                <button
+                  className="icon-btn"
+                  type="button"
+                  aria-label="Previous week"
+                  onClick={() => {
+                    const d = fromIsoDate(selectedDate)
+                    const prev = new Date(d)
+                    prev.setDate(d.getDate() - 7)
+                    setSelectedDate(toIsoDate(prev))
+                  }}
+                >
+                  ‹
+                </button>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  aria-label="Next week"
+                  onClick={() => {
+                    const d = fromIsoDate(selectedDate)
+                    const next = new Date(d)
+                    next.setDate(d.getDate() + 7)
+                    setSelectedDate(toIsoDate(next))
+                  }}
+                >
+                  ›
+                </button>
+              </div>
+            ) : null}
+
             <div className="bell-wrap">
               <button
                 className={classNames('icon-btn', 'bell-btn', bellOpen && 'icon-btn-active')}
@@ -485,52 +702,118 @@ function CalendarHome({
           </div>
         </div>
 
-        <div className="weekdays">
-          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((w) => (
-            <div key={w} className="weekday">
-              {w}
+        {viewMode === 'week' ? (
+          <div className="week-grid">
+            {weekGrid.map((d) => {
+              const items = weekItemsByDate.get(d.iso) ?? []
+              const selected = d.iso === selectedDate
+              const today = d.iso === toIsoDate(new Date())
+              return (
+                <button
+                  key={d.iso}
+                  className={classNames('week-day', selected && 'week-day-selected', today && 'week-day-today')}
+                  onClick={() => setSelectedDate(d.iso)}
+                  type="button"
+                >
+                  <div className="week-day-head">
+                    <div className="week-day-label">{d.label}</div>
+                    {items.length ? <div className="day-count">{items.length}</div> : null}
+                  </div>
+                  <div className="week-day-items">
+                    {items.slice(0, 6).map((it) => (
+                      <div key={it.id} className={typeLine(it.type)}>
+                        <span className="mini-time">{it.startTime ? toTimeInput(it.startTime) : '--:--'}</span>
+                        <span className="mini-title">{it.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        ) : viewMode !== 'list' ? (
+          <>
+            <div className="weekdays">
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((w) => (
+                <div key={w} className="weekday">
+                  {w}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        <div className="grid">
-          {grid.map((cell, idx) => {
-            if (!cell.iso) {
-              return <div key={idx} className="day day-empty" />
-            }
+            <div className="grid">
+              {grid.map((cell, idx) => {
+                if (!cell.iso) {
+                  return <div key={idx} className="day day-empty" />
+                }
 
-            const items = monthItemsByDate.get(cell.iso) ?? []
-            const selected = cell.iso === selectedDate
-            const today = cell.iso === toIsoDate(new Date())
+                const items = monthItemsByDate.get(cell.iso) ?? []
+                const selected = cell.iso === selectedDate
+                const today = cell.iso === toIsoDate(new Date())
 
-            return (
-              <button
-                key={cell.iso}
-                className={classNames('day', selected && 'day-selected', today && 'day-today')}
-                onClick={() => setSelectedDate(cell.iso!)}
-                type="button"
-              >
-                <div className="day-top">
-                  <div className="day-num">{cell.day}</div>
-                  {items.length ? <div className="day-count">{items.length}</div> : null}
-                </div>
-                <div className="day-dots">
-                  {items.slice(0, 4).map((it) => (
-                    <span key={it.id} className={importanceDot(it.importance)} />
-                  ))}
-                </div>
-                <div className="day-mini">
-                  {items.slice(0, 2).map((it) => (
-                    <div key={it.id} className="mini-line">
-                      <span className="mini-time">{it.startTime ? toTimeInput(it.startTime) : '--:--'}</span>
-                      <span className="mini-title">{it.title}</span>
+                return (
+                  <button
+                    key={cell.iso}
+                    className={classNames('day', selected && 'day-selected', today && 'day-today')}
+                    onClick={() => setSelectedDate(cell.iso!)}
+                    type="button"
+                  >
+                    <div className="day-top">
+                      <div className="day-num">{cell.day}</div>
+                      {items.length ? <div className="day-count">{items.length}</div> : null}
                     </div>
-                  ))}
-                </div>
-              </button>
-            )
-          })}
-        </div>
+                    <div className="day-dots">
+                      {items.slice(0, modeDots).map((it) => (
+                        <span key={it.id} className={typeDot(it.type)} />
+                      ))}
+                    </div>
+                    {modeLines > 0 ? (
+                      <div className="day-mini">
+                        {items.slice(0, modeLines).map((it) => (
+                          <div key={it.id} className={typeLine(it.type)}>
+                            <span className="mini-time">{it.startTime ? toTimeInput(it.startTime) : '--:--'}</span>
+                            <span className="mini-title">{it.title}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        ) : (
+          <div className="month-list">
+            {Array.from(monthItemsByDate.entries())
+              .sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([iso, items]) => {
+                const d = fromIsoDate(iso)
+                const label = d.toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit' })
+                const selected = iso === selectedDate
+                return (
+                  <button
+                    key={iso}
+                    className={classNames('month-list-day', selected && 'month-list-day-selected')}
+                    onClick={() => setSelectedDate(iso)}
+                    type="button"
+                  >
+                    <div className="month-list-head">
+                      <div className="month-list-label">{label}</div>
+                      <div className="month-list-count">{items.length}</div>
+                    </div>
+                    <div className="month-list-items">
+                      {items.slice(0, 6).map((it) => (
+                        <div key={it.id} className={typeLine(it.type)}>
+                          <span className="mini-time">{it.startTime ? toTimeInput(it.startTime) : '--:--'}</span>
+                          <span className="mini-title">{it.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </button>
+                )
+              })}
+          </div>
+        )}
       </section>
 
       <section className="glass panel editor-panel">
@@ -548,8 +831,17 @@ function CalendarHome({
           items={dayItems ?? []}
           onSave={createOrUpdate}
           onDelete={deleteItem}
+          onToggleDone={toggleDone}
+          defaultType={typeFilter ?? 'SCHOOL'}
+          typeLocked={typeFilter !== null}
+          onToast={onToast}
+          onTokenInvalid={onTokenInvalid}
+          workoutExercises={workoutExercises}
+          workoutTemplates={workoutTemplates}
+          refreshWorkoutLibrary={refreshWorkoutLibrary}
         />
       </section>
+      </div>
     </div>
   )
 }
@@ -559,49 +851,210 @@ function DayEditor({
   items,
   onSave,
   onDelete,
+  onToggleDone,
+  defaultType,
+  typeLocked,
+  onToast,
+  onTokenInvalid,
+  workoutExercises,
+  workoutTemplates,
+  refreshWorkoutLibrary,
 }: {
   dateIso: string
   items: CalendarItemResponse[]
-  onSave: (payload: CalendarItemCreateRequest, editingId: number | null) => Promise<void>
+  onSave: (payload: CalendarItemCreateRequest, editingId: number | null) => Promise<CalendarItemResponse | null>
   onDelete: (id: number) => Promise<void>
+  onToggleDone: (it: CalendarItemResponse, done: boolean) => Promise<void>
+  defaultType: CalendarItemType
+  typeLocked: boolean
+  onToast: (t: Toast) => void
+  onTokenInvalid: () => void
+  workoutExercises: ExerciseResponse[]
+  workoutTemplates: WorkoutTemplateResponse[]
+  refreshWorkoutLibrary: () => Promise<void>
 }) {
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [type, setType] = useState<CalendarItemType>('SCHOOL')
+  const [type, setType] = useState<CalendarItemType>(defaultType)
+  const [schoolKind, setSchoolKind] = useState<SchoolItemKind>('LECTURE')
   const [importance, setImportance] = useState<ImportanceLevel>('MEDIUM')
   const [title, setTitle] = useState('')
   const [log, setLog] = useState('')
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
+  const [done, setDone] = useState(false)
+  const [amount, setAmount] = useState('')
+  const [fixedCostFrequency, setFixedCostFrequency] = useState<FixedCostFrequency>('MONTHLY')
   const [saving, setSaving] = useState(false)
+  const [itemSearch, setItemSearch] = useState('')
+
+  const [workoutEntries, setWorkoutEntries] = useState<
+    Array<{ exerciseId: string; sets: string; reps: string; weight: string }>
+  >([])
+  const [workoutTemplatePick, setWorkoutTemplatePick] = useState<string>('')
+  const [newExerciseName, setNewExerciseName] = useState('')
+  const [newTemplateTitle, setNewTemplateTitle] = useState('')
 
   useEffect(() => {
     setEditingId(null)
-    setType('SCHOOL')
+    setType(defaultType)
+    setSchoolKind('LECTURE')
     setImportance('MEDIUM')
     setTitle('')
     setLog('')
     setStartTime('')
     setEndTime('')
-  }, [dateIso])
+    setDone(false)
+    setAmount('')
+    setFixedCostFrequency('MONTHLY')
+    setWorkoutEntries([])
+    setWorkoutTemplatePick('')
+    setItemSearch('')
+  }, [dateIso, defaultType])
+
+  const filteredItems = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase()
+    if (!q) return items
+    return items.filter((it) => {
+      const title = it.title.toLowerCase()
+      const log = (it.log ?? '').toLowerCase()
+      return title.includes(q) || log.includes(q)
+    })
+  }, [items, itemSearch])
+
+  const isHolidayItem = (it: CalendarItemResponse) =>
+    it.type === 'OTHER' && (it.title.startsWith('Merkedag:') || it.title.startsWith('Helligdag:'))
 
   const selectForEdit = (it: CalendarItemResponse) => {
+    if (isHolidayItem(it)) {
+      onToast({ kind: 'info', message: 'Merkedager/helligdager kan ikke endres.' })
+      return
+    }
     setEditingId(it.id)
     setType(it.type)
+    setSchoolKind(it.schoolKind ?? 'LECTURE')
     setImportance(it.importance)
     setTitle(it.title)
     setLog(it.log ?? '')
     setStartTime(toTimeInput(it.startTime))
     setEndTime(toTimeInput(it.endTime))
+    setDone(it.done)
+    setAmount(it.amount != null ? String(it.amount) : '')
+    setFixedCostFrequency(it.fixedCostFrequency ?? 'MONTHLY')
+
+    if (it.type === 'WORKOUT') {
+      void (async () => {
+        try {
+          await refreshWorkoutLibrary()
+          const session = await api.getWorkoutSession(it.id)
+          setWorkoutEntries(
+            session.entries.map((e) => ({
+              exerciseId: String(e.exerciseId),
+              sets: String(e.sets),
+              reps: String(e.reps),
+              weight: e.weight != null ? String(e.weight) : '',
+            })),
+          )
+        } catch (e) {
+          if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
+          onToast({ kind: 'error', message: isApiError(e) ? e.message : 'Failed loading workout session.' })
+        }
+      })()
+    } else {
+      setWorkoutEntries([])
+      setWorkoutTemplatePick('')
+    }
   }
 
   const clearForm = () => {
     setEditingId(null)
-    setType('SCHOOL')
+    setType(defaultType)
+    setSchoolKind('LECTURE')
     setImportance('MEDIUM')
     setTitle('')
     setLog('')
     setStartTime('')
     setEndTime('')
+    setDone(false)
+    setAmount('')
+    setFixedCostFrequency('MONTHLY')
+    setWorkoutEntries([])
+    setWorkoutTemplatePick('')
+  }
+
+  const showTimes = type !== 'FIXED_COST' && type !== 'MAIN_MEAL'
+  const isSchool = type === 'SCHOOL'
+  const isCompulsory = isSchool && schoolKind === 'COMPULSORY'
+  const isWorkout = type === 'WORKOUT'
+  const isWorkoutTab = typeLocked && defaultType === 'WORKOUT'
+
+  const supportsAllDay = type === 'OTHER'
+  const [allDay, setAllDay] = useState(false)
+
+  useEffect(() => {
+    if (!supportsAllDay) {
+      setAllDay(false)
+      return
+    }
+    setAllDay(!startTime.trim() && !endTime.trim())
+  }, [supportsAllDay, startTime, endTime])
+
+  useEffect(() => {
+    if (type === 'WORKOUT') void refreshWorkoutLibrary()
+  }, [type])
+
+  const applyTemplate = (templateId: string) => {
+    setWorkoutTemplatePick(templateId)
+    const idNum = Number(templateId)
+    if (!Number.isFinite(idNum)) return
+    const tpl = workoutTemplates.find((t) => t.id === idNum)
+    if (!tpl) return
+    setWorkoutEntries(
+      tpl.entries.map((e) => ({
+        exerciseId: String(e.exerciseId),
+        sets: String(e.sets),
+        reps: String(e.reps),
+        weight: e.weight != null ? String(e.weight) : '',
+      })),
+    )
+  }
+
+  const addWorkoutRow = () => {
+    setWorkoutEntries((prev) => [...prev, { exerciseId: '', sets: '3', reps: '10', weight: '' }])
+  }
+
+  const addExerciseToWorkout = (exerciseId: number) => {
+    const id = String(exerciseId)
+    setWorkoutEntries((prev) => {
+      // Avoid duplicates when building templates quickly.
+      if (prev.some((r) => r.exerciseId === id)) return prev
+      return [...prev, { exerciseId: id, sets: '3', reps: '10', weight: '' }]
+    })
+  }
+
+  const updateWorkoutRow = (idx: number, patch: Partial<(typeof workoutEntries)[number]>) => {
+    setWorkoutEntries((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+  }
+
+  const removeWorkoutRow = (idx: number) => {
+    setWorkoutEntries((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  const toWorkoutRequestEntries = (): WorkoutEntryRequest[] => {
+    return workoutEntries
+      .map((r) => {
+        const exerciseId = Number(r.exerciseId)
+        const sets = Number(r.sets)
+        const reps = Number(r.reps)
+        const weight = toNumberOrUndefined(r.weight)
+        if (!Number.isFinite(exerciseId) || !Number.isFinite(sets) || !Number.isFinite(reps)) return null
+        return {
+          exerciseId,
+          sets,
+          reps,
+          ...(weight != null ? { weight } : {}),
+        }
+      })
+      .filter(Boolean) as WorkoutEntryRequest[]
   }
 
   const submit = async () => {
@@ -609,17 +1062,33 @@ function DayEditor({
 
     const payload: CalendarItemCreateRequest = {
       date: dateIso,
-      startTime: fromTimeInput(startTime),
-      endTime: fromTimeInput(endTime),
+      startTime: showTimes && !isCompulsory && !(supportsAllDay && allDay) ? fromTimeInput(startTime) : undefined,
+      endTime: showTimes ? fromTimeInput(endTime) : undefined,
       type,
-      importance,
+      importance: isCompulsory ? importance : 'MEDIUM',
       title: title.trim(),
       log: log.trim() ? log.trim() : undefined,
+      done,
+      amount: amount.trim() ? Number(amount.trim()) : undefined,
+      schoolKind: isSchool ? schoolKind : undefined,
+      fixedCostFrequency: type === 'FIXED_COST' ? fixedCostFrequency : undefined,
     }
 
     setSaving(true)
     try {
-      await onSave(payload, editingId)
+      const saved = await onSave(payload, editingId)
+      if (!saved) return
+
+      if (saved.type === 'WORKOUT') {
+        try {
+          const entries = toWorkoutRequestEntries()
+          await api.updateWorkoutSession(saved.id, { entries })
+        } catch (e) {
+          if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
+          onToast({ kind: 'error', message: isApiError(e) ? e.message : 'Failed saving workout session.' })
+        }
+      }
+
       clearForm()
     } finally {
       setSaving(false)
@@ -630,28 +1099,196 @@ function DayEditor({
     <div className="editor">
       <div className="list">
         <div className="list-title">Items</div>
-        {items.length === 0 ? <div className="empty">No items yet.</div> : null}
+
+        {isWorkoutTab ? (
+          <div className="workout-library">
+            <div className="workout-lib-title">Workout library</div>
+
+            <div className="workout-lib-block">
+              <div className="workout-lib-sub">Exercises</div>
+              <div className="workout-lib-row">
+                <input
+                  value={newExerciseName}
+                  onChange={(e) => setNewExerciseName(e.target.value)}
+                  placeholder="Add exercise…"
+                />
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={async () => {
+                    const name = newExerciseName.trim()
+                    if (!name) return
+                    try {
+                      await api.createWorkoutExercise(name)
+                      setNewExerciseName('')
+                      await refreshWorkoutLibrary()
+                    } catch (e) {
+                      if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
+                      onToast({ kind: 'error', message: isApiError(e) ? e.message : 'Failed adding exercise.' })
+                    }
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+              <div className="workout-lib-list">
+                {workoutExercises.map((ex) => (
+                  <div key={ex.id} className="workout-lib-item">
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      onClick={() => addExerciseToWorkout(ex.id)}
+                      title="Add to workout/template"
+                    >
+                      {ex.name}
+                    </button>
+                    <div className="workout-lib-actions">
+                      <button
+                        className="icon-btn"
+                        type="button"
+                        onClick={() => addExerciseToWorkout(ex.id)}
+                        aria-label="Add exercise to workout/template"
+                        title="Add"
+                      >
+                        +
+                      </button>
+                      <button
+                        className="icon-btn icon-btn-danger"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await api.deleteWorkoutExercise(ex.id)
+                            await refreshWorkoutLibrary()
+                          } catch (e) {
+                            if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
+                            onToast({ kind: 'error', message: isApiError(e) ? e.message : 'Failed deleting exercise.' })
+                          }
+                        }}
+                        aria-label="Delete exercise"
+                        title="Delete"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="workout-lib-block">
+              <div className="workout-lib-sub">Templates</div>
+              <div className="workout-lib-row">
+                <input
+                  value={newTemplateTitle}
+                  onChange={(e) => setNewTemplateTitle(e.target.value)}
+                  placeholder="Template title…"
+                />
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={async () => {
+                    const title = newTemplateTitle.trim()
+                    if (!title) return
+                    try {
+                      const entries = toWorkoutRequestEntries()
+                      if (entries.length === 0) {
+                        onToast({ kind: 'error', message: 'Add at least one exercise row first.' })
+                        return
+                      }
+                      await api.createWorkoutTemplate({ title, entries })
+                      setNewTemplateTitle('')
+                      await refreshWorkoutLibrary()
+                    } catch (e) {
+                      if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
+                      onToast({ kind: 'error', message: isApiError(e) ? e.message : 'Failed saving template.' })
+                    }
+                  }}
+                >
+                  Save
+                </button>
+              </div>
+              <div className="workout-lib-list">
+                {workoutTemplates.map((t) => (
+                  <div key={t.id} className="workout-lib-item">
+                    <button className="btn btn-ghost" type="button" onClick={() => applyTemplate(String(t.id))}>
+                      {t.title}
+                    </button>
+                    <button
+                      className="icon-btn icon-btn-danger"
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await api.deleteWorkoutTemplate(t.id)
+                          await refreshWorkoutLibrary()
+                        } catch (e) {
+                          if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
+                          onToast({ kind: 'error', message: isApiError(e) ? e.message : 'Failed deleting template.' })
+                        }
+                      }}
+                      aria-label="Delete template"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <label className="field">
+          <span>Search</span>
+          <input value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} placeholder="Title or log…" />
+        </label>
+
+        {filteredItems.length === 0 ? (
+          <div className="empty">{items.length === 0 ? 'No items yet.' : 'No matches.'}</div>
+        ) : null}
         <div className="list-scroll">
-          {items.map((it) => (
+          {filteredItems.map((it) => (
             <div key={it.id} className="item-row">
               <button className="item-main" onClick={() => selectForEdit(it)} type="button">
                 <div className="item-top">
-                  <span className={classNames('pill', `pill-${it.importance.toLowerCase()}`)}>
-                    {it.importance}
-                  </span>
+                  <input
+                    className="done-box"
+                    type="checkbox"
+                    checked={it.done}
+                    disabled={isHolidayItem(it)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      if (isHolidayItem(it)) return
+                      onToggleDone(it, e.target.checked)
+                    }}
+                    aria-label="Mark done"
+                  />
+                  {it.type === 'SCHOOL' && it.schoolKind === 'COMPULSORY' ? (
+                    <span className={classNames('pill', `pill-${it.importance.toLowerCase()}`)}>{it.importance}</span>
+                  ) : null}
                   <span className="pill pill-type">{it.type}</span>
+                  {it.type === 'SCHOOL' && it.schoolKind ? <span className="pill">{it.schoolKind}</span> : null}
+                  {it.amount != null ? <span className="pill">{it.amount}</span> : null}
                 </div>
-                <div className="item-title">{it.title}</div>
+                <div className={classNames('item-title', it.done && 'item-title-done')}>{it.title}</div>
                 <div className="item-sub">
-                  <span>{it.startTime ? toTimeInput(it.startTime) : '--:--'}</span>
-                  <span>→</span>
-                  <span>{it.endTime ? toTimeInput(it.endTime) : '--:--'}</span>
+                  {it.type === 'FIXED_COST' || it.type === 'MAIN_MEAL' ? (
+                    <span>No time</span>
+                  ) : it.type === 'SCHOOL' && it.schoolKind === 'COMPULSORY' ? (
+                    <span>Deadline: {it.endTime ? toTimeInput(it.endTime) : '--:--'}</span>
+                  ) : (
+                    <>
+                      <span>{it.startTime ? toTimeInput(it.startTime) : '--:--'}</span>
+                      <span>→</span>
+                      <span>{it.endTime ? toTimeInput(it.endTime) : '--:--'}</span>
+                    </>
+                  )}
                 </div>
                 {it.log ? <div className="item-log">{it.log}</div> : null}
               </button>
-              <button className="icon-btn icon-btn-danger" onClick={() => onDelete(it.id)} type="button">
-                ✕
-              </button>
+              {isHolidayItem(it) ? null : (
+                <button className="icon-btn icon-btn-danger" onClick={() => onDelete(it.id)} type="button">
+                  ✕
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -660,37 +1297,185 @@ function DayEditor({
       <div className="form">
         <div className="form-title">{editingId ? 'Edit item' : 'Add item'}</div>
         <div className="form-grid">
-          <label className="field">
-            <span>Type</span>
-            <select value={type} onChange={(e) => setType(e.target.value as CalendarItemType)}>
-              {ITEM_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+          {!typeLocked ? (
+            <label className="field">
+              <span>Type</span>
+              <select value={type} onChange={(e) => setType(e.target.value as CalendarItemType)}>
+                {ITEM_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="field">
+              <span>Type</span>
+              <div className="pill">{type}</div>
+            </div>
+          )}
+
+          {isCompulsory ? (
+            <label className="field">
+              <span>Importance</span>
+              <select value={importance} onChange={(e) => setImportance(e.target.value as ImportanceLevel)}>
+                {IMPORTANCE.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="field">
+              <span>Importance</span>
+              <div className="pill">MEDIUM</div>
+            </div>
+          )}
+
+          {isSchool ? (
+            <label className="field">
+              <span>School</span>
+              <select value={schoolKind} onChange={(e) => setSchoolKind(e.target.value as SchoolItemKind)}>
+                <option value="LECTURE">Lecture</option>
+                <option value="COMPULSORY">Compulsory</option>
+              </select>
+            </label>
+          ) : null}
+
+          {showTimes && !isCompulsory ? (
+            <label className="field">
+              <span>Start</span>
+              <input
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                placeholder={supportsAllDay && allDay ? '' : 'HH:MM'}
+                disabled={supportsAllDay && allDay}
+              />
+            </label>
+          ) : null}
+
+          {showTimes ? (
+            <label className="field">
+              <span>{isCompulsory ? 'Deadline' : 'End'}</span>
+              <input
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                placeholder={supportsAllDay && allDay ? '' : 'HH:MM'}
+                disabled={supportsAllDay && allDay && !isCompulsory}
+              />
+            </label>
+          ) : null}
+
+          {supportsAllDay && showTimes && !isCompulsory ? (
+            <label className="check-field">
+              <span>All-day</span>
+              <input
+                className="check"
+                type="checkbox"
+                checked={allDay}
+                onChange={(e) => {
+                  const v = e.target.checked
+                  setAllDay(v)
+                  if (v) {
+                    setStartTime('')
+                    setEndTime('')
+                  }
+                }}
+              />
+            </label>
+          ) : null}
+
+          <label className="check-field">
+            <span>Done</span>
+            <input className="check" type="checkbox" checked={done} onChange={(e) => setDone(e.target.checked)} />
           </label>
 
-          <label className="field">
-            <span>Importance</span>
-            <select value={importance} onChange={(e) => setImportance(e.target.value as ImportanceLevel)}>
-              {IMPORTANCE.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </label>
+          {type === 'FIXED_COST' ? (
+            <label className="field">
+              <span>Amount</span>
+              <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" inputMode="decimal" />
+            </label>
+          ) : null}
 
-          <label className="field">
-            <span>Start</span>
-            <input value={startTime} onChange={(e) => setStartTime(e.target.value)} placeholder="HH:MM" />
-          </label>
+          {type === 'FIXED_COST' ? (
+            <label className="field">
+              <span>Frequency</span>
+              <select
+                value={fixedCostFrequency}
+                onChange={(e) => setFixedCostFrequency(e.target.value as FixedCostFrequency)}
+              >
+                <option value="MONTHLY">Monthly</option>
+                <option value="WEEKLY">Weekly</option>
+                <option value="YEARLY">Yearly</option>
+              </select>
+            </label>
+          ) : null}
 
-          <label className="field">
-            <span>End</span>
-            <input value={endTime} onChange={(e) => setEndTime(e.target.value)} placeholder="HH:MM" />
-          </label>
+          {isWorkout ? (
+            <div className="field field-wide">
+              <span>Workout details</span>
+
+              <div className="workout-actions">
+                <select
+                  value={workoutTemplatePick}
+                  onChange={(e) => applyTemplate(e.target.value)}
+                  aria-label="Apply template"
+                >
+                  <option value="">Apply template…</option>
+                  {workoutTemplates.map((t) => (
+                    <option key={t.id} value={String(t.id)}>
+                      {t.title}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn btn-ghost" type="button" onClick={addWorkoutRow}>
+                  + Add exercise
+                </button>
+              </div>
+
+              {workoutEntries.length === 0 ? <div className="muted">No exercises added yet.</div> : null}
+              <div className="workout-rows">
+                {workoutEntries.map((row, idx) => (
+                  <div key={idx} className="workout-row">
+                    <select
+                      value={row.exerciseId}
+                      onChange={(e) => updateWorkoutRow(idx, { exerciseId: e.target.value })}
+                      aria-label="Exercise"
+                    >
+                      <option value="">Exercise…</option>
+                      {workoutExercises.map((ex) => (
+                        <option key={ex.id} value={String(ex.id)}>
+                          {ex.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={row.sets}
+                      onChange={(e) => updateWorkoutRow(idx, { sets: e.target.value })}
+                      placeholder="Sets"
+                      inputMode="numeric"
+                    />
+                    <input
+                      value={row.reps}
+                      onChange={(e) => updateWorkoutRow(idx, { reps: e.target.value })}
+                      placeholder="Reps"
+                      inputMode="numeric"
+                    />
+                    <input
+                      value={row.weight}
+                      onChange={(e) => updateWorkoutRow(idx, { weight: e.target.value })}
+                      placeholder="Weight"
+                      inputMode="decimal"
+                    />
+                    <button className="icon-btn icon-btn-danger" type="button" onClick={() => removeWorkoutRow(idx)}>
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <label className="field field-wide">
             <span>Title</span>

@@ -1,6 +1,7 @@
 package CalenderApp.demo.service;
 
 import CalenderApp.demo.model.AppUser;
+import CalenderApp.demo.model.CalendarItemType;
 import CalenderApp.demo.service.command.CreateCalendarItemCommand;
 import CalenderApp.demo.service.command.UpdateCalendarItemCommand;
 import CalenderApp.demo.service.view.CalendarItemView;
@@ -16,7 +17,7 @@ public interface CalendarService {
 
     void delete(AppUser user, Long id);
 
-    List<CalendarItemView> listDay(AppUser user, LocalDate date);
+    List<CalendarItemView> listDay(AppUser user, LocalDate date, CalendarItemType type);
 
-    List<CalendarItemView> listMonth(AppUser user, YearMonth month);
+    List<CalendarItemView> listMonth(AppUser user, YearMonth month, CalendarItemType type);
 }
