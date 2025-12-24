@@ -1,0 +1,8 @@
+Everything is a To do list, where when I cross it out it is marked as done
+Multiple calander pages, one main with all, and access to other parts:
+- Fixed Costs (monthly subscription) (possible to delete subscription/unsubcribe) (give a notifiction) (together with price so I know how much to have on my account)
+- Food plan (main course) (with list of ingridients saved, and when used I can remove them (how much of each ingredients)) (I can also add new ingriedients and delete or minimzie size left of item)
+- Workout plan (type of workout, how many sets and reps for each workout, a adding section where I can add new types of exercises that is stored and can be reused.) (can be marked as completed or not completed (Notification if there is a week since last session)
+- school plan(add courses for semester (how long does semester last) (add weekly plan (f.ex lecture 12-14 each wedsnday, able to marke as cancelled if there is no lecture.) Also a own adding page compulsory assignments and exams)) (For lectures, notification 2 hours before, and for compolsury notification 24 hours before) (compolsury can be marked by importance (low, medium, high, critical))
+- Work/Job plan, (times and dates for when I have work (with notification 24 hours ahead))
+- Other plans (for optional other things, like doctor appointments etc, a very flexible section for different types of dates)
