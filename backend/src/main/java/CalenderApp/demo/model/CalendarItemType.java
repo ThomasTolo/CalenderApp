@@ -6,5 +6,6 @@ public enum CalendarItemType {
     MAIN_MEAL,
     JOB,
     FIXED_COST,
+    BIRTHDAY,
     OTHER
 }

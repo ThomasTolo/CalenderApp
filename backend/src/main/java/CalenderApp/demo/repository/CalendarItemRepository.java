@@ -43,4 +43,8 @@ public interface CalendarItemRepository extends JpaRepository<CalendarItem, Long
     boolean existsByUserAndFixedCostSubscriptionAndDate(AppUser user, FixedCostSubscription sub, LocalDate date);
 
     List<CalendarItem> findByUserAndFixedCostSubscriptionAndDateBetween(AppUser user, FixedCostSubscription sub, LocalDate start, LocalDate end);
+
+    boolean existsByUserAndBirthdaySubscriptionAndDate(AppUser user, CalenderApp.demo.model.BirthdaySubscription sub, LocalDate date);
+
+    List<CalendarItem> findByUserAndBirthdaySubscriptionAndDateBetween(AppUser user, CalenderApp.demo.model.BirthdaySubscription sub, LocalDate start, LocalDate end);
 }

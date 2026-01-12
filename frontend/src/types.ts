@@ -1,4 +1,4 @@
-export type CalendarItemType = 'SCHOOL' | 'WORKOUT' | 'MAIN_MEAL' | 'JOB' | 'FIXED_COST' | 'OTHER'
+export type CalendarItemType = 'SCHOOL' | 'WORKOUT' | 'MAIN_MEAL' | 'JOB' | 'FIXED_COST' | 'BIRTHDAY' | 'OTHER'
 export type ImportanceLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 export type NotificationType = 'ITEM_CREATED' | 'ITEM_UPDATED' | 'ITEM_DELETED' | 'UPCOMING'
 

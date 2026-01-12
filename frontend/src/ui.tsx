@@ -27,7 +27,7 @@ import { useRawWebSocket } from './hooks/useRawWebSocket'
 
 type Toast = { kind: 'error' | 'info'; message: string }
 
-const ITEM_TYPES: CalendarItemType[] = ['SCHOOL', 'WORKOUT', 'MAIN_MEAL', 'JOB', 'FIXED_COST', 'OTHER']
+const ITEM_TYPES: CalendarItemType[] = ['SCHOOL', 'WORKOUT', 'MAIN_MEAL', 'JOB', 'FIXED_COST', 'BIRTHDAY', 'OTHER']
 const IMPORTANCE: ImportanceLevel[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 
 const PAGES: Array<{ label: string; type: CalendarItemType | null }> = [
@@ -37,6 +37,7 @@ const PAGES: Array<{ label: string; type: CalendarItemType | null }> = [
   { label: 'Workout', type: 'WORKOUT' },
   { label: 'School', type: 'SCHOOL' },
   { label: 'Work/Job', type: 'JOB' },
+  { label: 'Birthdays', type: 'BIRTHDAY' },
   { label: 'Other', type: 'OTHER' },
 ]
 
@@ -548,7 +549,7 @@ function CalendarHome({
       void refreshDay(selectedDate)
     } catch (e) {
       if (isApiError(e) && (e.status === 401 || e.status === 403)) return onTokenInvalid()
-      onToast({ kind: 'error', message: 'Delete failed.' })
+      onToast({ kind: 'error', message: isApiError(e) ? e.message : 'Delete failed.' })
     }
   }
 
@@ -750,6 +751,7 @@ function CalendarHome({
                 const items = monthItemsByDate.get(cell.iso) ?? []
                 const selected = cell.iso === selectedDate
                 const today = cell.iso === toIsoDate(new Date())
+                const allDone = items.length > 0 && items.every((it) => it.done)
 
                 return (
                   <button
@@ -760,7 +762,10 @@ function CalendarHome({
                   >
                     <div className="day-top">
                       <div className="day-num">{cell.day}</div>
-                      {items.length ? <div className="day-count">{items.length}</div> : null}
+                      <div className="day-top-right">
+                        {allDone ? <div className="day-confirmed">✓</div> : null}
+                        {items.length ? <div className="day-count">{items.length}</div> : null}
+                      </div>
                     </div>
                     <div className="day-dots">
                       {items.slice(0, modeDots).map((it) => (
@@ -790,6 +795,7 @@ function CalendarHome({
                 const d = fromIsoDate(iso)
                 const label = d.toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit' })
                 const selected = iso === selectedDate
+                const allDone = items.length > 0 && items.every((it) => it.done)
                 return (
                   <button
                     key={iso}
@@ -799,7 +805,10 @@ function CalendarHome({
                   >
                     <div className="month-list-head">
                       <div className="month-list-label">{label}</div>
-                      <div className="month-list-count">{items.length}</div>
+                      <div className="month-list-right">
+                        {allDone ? <div className="day-confirmed">✓</div> : null}
+                        <div className="month-list-count">{items.length}</div>
+                      </div>
                     </div>
                     <div className="month-list-items">
                       {items.slice(0, 6).map((it) => (
@@ -981,7 +990,7 @@ function DayEditor({
     setWorkoutTemplatePick('')
   }
 
-  const showTimes = type !== 'FIXED_COST' && type !== 'MAIN_MEAL'
+  const showTimes = type !== 'FIXED_COST' && type !== 'MAIN_MEAL' && type !== 'BIRTHDAY'
   const isSchool = type === 'SCHOOL'
   const isCompulsory = isSchool && schoolKind === 'COMPULSORY'
   const isWorkout = type === 'WORKOUT'
@@ -1270,7 +1279,7 @@ function DayEditor({
                 </div>
                 <div className={classNames('item-title', it.done && 'item-title-done')}>{it.title}</div>
                 <div className="item-sub">
-                  {it.type === 'FIXED_COST' || it.type === 'MAIN_MEAL' ? (
+                  {it.type === 'FIXED_COST' || it.type === 'MAIN_MEAL' || it.type === 'BIRTHDAY' ? (
                     <span>No time</span>
                   ) : it.type === 'SCHOOL' && it.schoolKind === 'COMPULSORY' ? (
                     <span>Deadline: {it.endTime ? toTimeInput(it.endTime) : '--:--'}</span>

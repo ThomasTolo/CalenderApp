@@ -1,4 +1,5 @@
 Everything is a To do list, where when I cross it out it is marked as done
+
 Multiple calander pages, one main with all, and access to other parts:
 - Fixed Costs (monthly subscription) (possible to delete subscription/unsubcribe) (give a notifiction) (together with price so I know how much to have on my account)
 - Food plan (main course) (with list of ingridients saved, and when used I can remove them (how much of each ingredients)) (I can also add new ingriedients and delete or minimzie size left of item)
@@ -12,3 +13,22 @@ Multiple calander pages, one main with all, and access to other parts:
 - Add birthdats (added to each year)
 - Add confirmed (a check next to the calander happening if marked as done)
 - Fix the workout plan
+- When we are in Main only the clendar shows, not the right side Bar 
+- Fix Food with fridge status
+- Fix a budget type of control structure
+- Make the main calander more readable
+- We dont need importance bar where it is not used
+- Make the colors of different calandar happenings more different (not all different shades of blue)
+- Delete all notifications
+
+- Brand Idea: Focuset
+
+
+1 2 
+3 4
+5 6 
+-
+2 4 6
+1 3 5
+
+24 

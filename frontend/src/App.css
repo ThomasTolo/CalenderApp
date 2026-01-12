@@ -333,6 +333,24 @@
   margin-bottom: 8px;
 }
 
+.day-top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.month-list-right {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.day-confirmed {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
 .day-num {
   font-weight: 800;
 }

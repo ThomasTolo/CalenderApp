@@ -71,6 +71,10 @@ public class CalendarItem {
     @JoinColumn(name = "fixed_cost_subscription_id")
     private FixedCostSubscription fixedCostSubscription;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "birthday_subscription_id")
+    private BirthdaySubscription birthdaySubscription;
+
     @Column(nullable = false)
     private boolean notified = false;
 
@@ -194,6 +198,15 @@ public class CalendarItem {
 
     public void setFixedCostSubscription(FixedCostSubscription fixedCostSubscription) {
         this.fixedCostSubscription = fixedCostSubscription;
+        touch();
+    }
+
+    public BirthdaySubscription getBirthdaySubscription() {
+        return birthdaySubscription;
+    }
+
+    public void setBirthdaySubscription(BirthdaySubscription birthdaySubscription) {
+        this.birthdaySubscription = birthdaySubscription;
         touch();
     }
 

@@ -1,6 +1,7 @@
 package CalenderApp.demo.service.impl;
 
 import CalenderApp.demo.model.AppUser;
+import CalenderApp.demo.model.BirthdaySubscription;
 import CalenderApp.demo.model.CalendarItem;
 import CalenderApp.demo.model.CalendarItemType;
 import CalenderApp.demo.model.FixedCostFrequency;
@@ -8,6 +9,7 @@ import CalenderApp.demo.model.FixedCostSubscription;
 import CalenderApp.demo.model.Notification;
 import CalenderApp.demo.model.NotificationType;
 import CalenderApp.demo.model.SchoolItemKind;
+import CalenderApp.demo.repository.BirthdaySubscriptionRepository;
 import CalenderApp.demo.repository.CalendarItemRepository;
 import CalenderApp.demo.repository.FixedCostSubscriptionRepository;
 import CalenderApp.demo.service.CalendarMonthCache;
@@ -37,19 +39,22 @@ public class CalendarServiceImpl implements CalendarService {
     private final EventPublisher eventPublisher;
     private final NotificationService notificationService;
     private final FixedCostSubscriptionRepository fixedCostSubscriptionRepository;
+    private final BirthdaySubscriptionRepository birthdaySubscriptionRepository;
 
     public CalendarServiceImpl(
             CalendarItemRepository itemRepository,
             CalendarMonthCache monthCache,
             EventPublisher eventPublisher,
             NotificationService notificationService,
-            FixedCostSubscriptionRepository fixedCostSubscriptionRepository
+            FixedCostSubscriptionRepository fixedCostSubscriptionRepository,
+            BirthdaySubscriptionRepository birthdaySubscriptionRepository
     ) {
         this.itemRepository = itemRepository;
         this.monthCache = monthCache;
         this.eventPublisher = eventPublisher;
         this.notificationService = notificationService;
         this.fixedCostSubscriptionRepository = fixedCostSubscriptionRepository;
+        this.birthdaySubscriptionRepository = birthdaySubscriptionRepository;
     }
 
     @Override
@@ -73,6 +78,11 @@ public class CalendarServiceImpl implements CalendarService {
         if (command.type() == CalendarItemType.FIXED_COST) {
             FixedCostSubscription sub = createOrUpdateSubscription(user, null, command);
             item.setFixedCostSubscription(sub);
+        }
+
+        if (command.type() == CalendarItemType.BIRTHDAY) {
+            BirthdaySubscription sub = createOrUpdateBirthdaySubscription(user, null, command);
+            item.setBirthdaySubscription(sub);
         }
 
         CalendarItem saved = itemRepository.save(item);
@@ -123,8 +133,15 @@ public class CalendarServiceImpl implements CalendarService {
             FixedCostSubscription sub = createOrUpdateSubscription(user, existing.getFixedCostSubscription(), command);
             existing.setFixedCostSubscription(sub);
             syncFutureFixedCostOccurrences(user, sub);
+            existing.setBirthdaySubscription(null);
+        } else if (command.type() == CalendarItemType.BIRTHDAY) {
+            BirthdaySubscription sub = createOrUpdateBirthdaySubscription(user, existing.getBirthdaySubscription(), command);
+            existing.setBirthdaySubscription(sub);
+            syncFutureBirthdayOccurrences(user, sub);
+            existing.setFixedCostSubscription(null);
         } else {
             existing.setFixedCostSubscription(null);
+            existing.setBirthdaySubscription(null);
         }
 
         CalendarItem saved = itemRepository.save(existing);
@@ -156,7 +173,7 @@ public class CalendarServiceImpl implements CalendarService {
 
         if (existing.getType() == CalendarItemType.FIXED_COST && existing.getFixedCostSubscription() != null) {
             FixedCostSubscription sub = java.util.Objects.requireNonNull(existing.getFixedCostSubscription());
-            LocalDate today = LocalDate.now();
+            LocalDate today = existing.getDate();
             LocalDate end = LocalDate.of(3000, 1, 1);
             List<CalendarItem> future = java.util.Objects.requireNonNull(
                 itemRepository.findByUserAndFixedCostSubscriptionAndDateBetween(user, sub, today, end)
@@ -170,6 +187,28 @@ public class CalendarServiceImpl implements CalendarService {
                 NotificationType.ITEM_DELETED,
                 existing.getImportance(),
                 "Unsubscribed FIXED_COST: " + sub.getTitle(),
+                existing.getId()
+            ));
+            evictMonth(user.getId(), YearMonth.from(existing.getDate()));
+            return;
+        }
+
+        if (existing.getType() == CalendarItemType.BIRTHDAY && existing.getBirthdaySubscription() != null) {
+            BirthdaySubscription sub = java.util.Objects.requireNonNull(existing.getBirthdaySubscription());
+            LocalDate today = existing.getDate();
+            LocalDate end = LocalDate.of(3000, 1, 1);
+            List<CalendarItem> future = java.util.Objects.requireNonNull(
+                itemRepository.findByUserAndBirthdaySubscriptionAndDateBetween(user, sub, today, end)
+            );
+            itemRepository.deleteAll(future);
+            sub.setActive(false);
+            birthdaySubscriptionRepository.save(sub);
+
+            notificationService.create(new Notification(
+                user,
+                NotificationType.ITEM_DELETED,
+                existing.getImportance(),
+                "Unsubscribed BIRTHDAY: " + sub.getTitle(),
                 existing.getId()
             ));
             evictMonth(user.getId(), YearMonth.from(existing.getDate()));
@@ -195,6 +234,9 @@ public class CalendarServiceImpl implements CalendarService {
         if (type == null || type == CalendarItemType.FIXED_COST) {
             ensureFixedCostOccurrences(user, YearMonth.from(date));
         }
+        if (type == null || type == CalendarItemType.BIRTHDAY) {
+            ensureBirthdayOccurrences(user, YearMonth.from(date));
+        }
         if (type == null || type == CalendarItemType.OTHER) {
             ensureNorwayHolidays(user, YearMonth.from(date));
         }
@@ -214,6 +256,9 @@ public class CalendarServiceImpl implements CalendarService {
     public List<CalendarItemView> listMonth(AppUser user, YearMonth month, CalenderApp.demo.model.CalendarItemType type) {
         if (type == null || type == CalendarItemType.FIXED_COST) {
             ensureFixedCostOccurrences(user, month);
+        }
+        if (type == null || type == CalendarItemType.BIRTHDAY) {
+            ensureBirthdayOccurrences(user, month);
         }
         if (type == null || type == CalendarItemType.OTHER) {
             ensureNorwayHolidays(user, month);
@@ -342,6 +387,34 @@ public class CalendarServiceImpl implements CalendarService {
         }
     }
 
+    private void ensureBirthdayOccurrences(AppUser user, YearMonth month) {
+        boolean createdAny = false;
+
+        for (BirthdaySubscription sub : birthdaySubscriptionRepository.findByUserAndActiveTrue(user)) {
+            if (sub.getMonth() != month.getMonthValue()) {
+                continue;
+            }
+
+            int dom = sub.getDayOfMonth();
+            int capped = Math.min(dom, month.lengthOfMonth());
+            LocalDate date = month.atDay(capped);
+
+            if (itemRepository.existsByUserAndBirthdaySubscriptionAndDate(user, sub, date)) {
+                continue;
+            }
+
+            CalendarItem item = new CalendarItem(user, date, CalendarItemType.BIRTHDAY, sub.getTitle());
+            item.setImportance(CalenderApp.demo.model.ImportanceLevel.LOW);
+            item.setBirthdaySubscription(sub);
+            itemRepository.save(item);
+            createdAny = true;
+        }
+
+        if (createdAny) {
+            evictMonth(user.getId(), month);
+        }
+    }
+
     private static boolean isSystemHoliday(CalendarItem item) {
         if (item.getType() != CalendarItemType.OTHER) {
             return false;
@@ -441,6 +514,47 @@ public class CalendarServiceImpl implements CalendarService {
 
     private static FixedCostFrequency effectiveFrequency(FixedCostSubscription sub) {
         return sub.getFrequency() != null ? sub.getFrequency() : FixedCostFrequency.MONTHLY;
+    }
+
+    private BirthdaySubscription createOrUpdateBirthdaySubscription(AppUser user, BirthdaySubscription existing, CreateCalendarItemCommand command) {
+        return createOrUpdateBirthdaySubscription(user, existing, command.title(), command.date());
+    }
+
+    private BirthdaySubscription createOrUpdateBirthdaySubscription(AppUser user, BirthdaySubscription existing, UpdateCalendarItemCommand command) {
+        return createOrUpdateBirthdaySubscription(user, existing, command.title(), command.date());
+    }
+
+    private BirthdaySubscription createOrUpdateBirthdaySubscription(AppUser user, BirthdaySubscription existing, String title, LocalDate date) {
+        int month = date != null ? date.getMonthValue() : 1;
+        int dayOfMonth = date != null ? date.getDayOfMonth() : 1;
+
+        if (existing == null) {
+            BirthdaySubscription sub = birthdaySubscriptionRepository
+                    .findFirstByUserAndTitleAndMonthAndDayOfMonthOrderByCreatedAtAsc(user, title, month, dayOfMonth)
+                    .orElseGet(() -> new BirthdaySubscription(user, title, month, dayOfMonth));
+            sub.setActive(true);
+            return birthdaySubscriptionRepository.save(sub);
+        }
+
+        existing.setTitle(title);
+        existing.setMonth(month);
+        existing.setDayOfMonth(dayOfMonth);
+        existing.setActive(true);
+        return birthdaySubscriptionRepository.save(existing);
+    }
+
+    private void syncFutureBirthdayOccurrences(AppUser user, BirthdaySubscription sub) {
+        LocalDate today = LocalDate.now();
+        LocalDate end = LocalDate.of(3000, 1, 1);
+        List<CalendarItem> future = itemRepository.findByUserAndBirthdaySubscriptionAndDateBetween(user, sub, today, end);
+        if (future.isEmpty()) {
+            return;
+        }
+
+        for (CalendarItem item : future) {
+            item.setTitle(sub.getTitle());
+        }
+        itemRepository.saveAll(future);
     }
 
     private void syncFutureFixedCostOccurrences(AppUser user, FixedCostSubscription sub) {
